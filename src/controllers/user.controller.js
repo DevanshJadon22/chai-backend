@@ -16,22 +16,24 @@ const registerUser=asyncHandler(async (req,res)=>{
     // return response
 
     // agar data directly form sai aa raha h ya json sai aa raha h toh hum data ko acess/get kar sakte h req.body ke trough
-    const {fullName,username,email,password}=req.body
-    console.log("email: ",email);
+    // const {fullName,username,email,password}=req.body
+    const {fullName,username,email,password}=req.body||{}
+    // console.log(req.body)
+    // console.log("email: ",email);
 
     // one way is to check for each and every field one by one but better appraoch is using array.some()
     // if(fullName===""){
     //     throw new ApiError(400,"Fullname is Required")
     // }
 
-    if([fullName,username,email,password].some((feild)=> feild?.trim()==="")){
+    if([fullName,username,email,password].some((feild)=> !feild || feild?.trim()==="")){
         throw new ApiError(400,"All Feilds are Required.")
     }
 
     // checking wether the user is already registered or not?
     // we will use User model to ask /find user in mongoDb using userName or Email
     // the findOne() function returns the first matching document from the mongoDb
-    const existedUser=User.findOne({
+    const existedUser=await User.findOne({
         // the below line makes us use the or operator here we pass an array of objects as parameters for the or operator
         // if either the document with the given userNmae or given email is found in mongoDb we will return true
         $or:[{username},{email}]
@@ -44,10 +46,15 @@ const registerUser=asyncHandler(async (req,res)=>{
     // in most of the cases the middleware does nothing but add some extra feilds to the req object that is provides some extra functionalities
     // here multer (middleware) provides us the .files() functionality that helps us to deal with the files 
     // here we will be able to acess the files that multer will upload to our server when files are submitted in our frontend
-    console.log(req.files);
+    // console.log(req.files);
 
-    const avatarLocalPath=req.files?.avatat[0]?.path // this will return us the path where the file will be stored on server.
-    const coverImageLocalPath=req.files?.coverImge[0]?.path
+    const avatarLocalPath=req.files?.avatar?.[0]?.path // this will return us the path where the file will be stored on server.
+    // const coverImageLocalPath=req.files?.coverImage[0]?.path
+
+    let coverImageLocalPath;
+    if(req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length>0){
+        coverImageLocalPath=req.files.coverImage[0].path
+    }
 
     if(!avatarLocalPath){
         throw new ApiError(400,"Avatar File is Required.")

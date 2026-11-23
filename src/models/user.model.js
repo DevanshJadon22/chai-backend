@@ -55,7 +55,7 @@ userSchema.pre("save",async function(next){
     if(!this.isModified("password")) return next();
     // the above if line checks wether the password is modified or not if not hen the function returns next() immediately
     this.password=await bcrypt.hash(this.password,10);
-    next();
+    next;
 })
 
 //creating a custom method for comparing the password that user provides with the encrypted stored password in db
