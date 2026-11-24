@@ -1,8 +1,9 @@
 // yaha par hum user ke sare routes rakhenge
 import { Router } from "express";
-import { registerUser } from "../controllers/user.controller.js";
+import { loginUser, logOutUser, registerUser,refreshAccessToken } from "../controllers/user.controller.js";
 // hume agar files ko handle karna h toh hume upload (multer vala) middleware use karna padega before registerUser method
 import { upload } from "../middlewares/multer.middleware.js";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
 
 const router=Router()
 
@@ -24,5 +25,11 @@ router.route("/register").post(
     registerUser
 )
 // router.route("/login",login)
+router.route("/login").post(loginUser)
+
+// secured routes( routes to be accessed by loggedin user inly)
+// here we are injecting "verifyJWT" middleware before "logOutUser"
+router.route("/logout").post(verifyJWT,logOutUser)
+router.route("/refresh-token").post(refreshAccessToken)
 
 export default router

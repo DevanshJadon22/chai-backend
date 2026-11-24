@@ -49,14 +49,28 @@ const userSchema=new Schema(
     },{timestamps:true})
 
 // using inbuilt hooks of mongoose for encryption of password before saving it
-userSchema.pre("save",async function(next){
-    // the below written code will change the password every single time the user changes anything in the data base like his photo , avatar etc also so we have to write a logic that modify password only when the password feild is ChannelMergerNode.
-    // the logic for checking wether the password is modified is as follow
-    if(!this.isModified("password")) return next();
-    // the above if line checks wether the password is modified or not if not hen the function returns next() immediately
-    this.password=await bcrypt.hash(this.password,10);
-    next;
-})
+// the below written code is for mongoose version 8
+// userSchema.pre("save",async function(next){
+//     // the below written code will change the password every single time the user changes anything in the data base like his photo , avatar etc also so we have to write a logic that modify password only when the password feild is ChannelMergerNode.
+//     // the logic for checking wether the password is modified is as follow
+//     if(!this.isModified("password")) return next();
+//     // the above if line checks wether the password is modified or not if not hen the function returns next() immediately
+//     this.password=await bcrypt.hash(this.password,10);
+//     next();
+// })
+
+
+//for mongoose version 9 onwards we will have to use below code.
+
+userSchema.pre("save", async function () {
+    // Case 1: User is logging in (only refreshToken changed, NOT password)
+    // Hits 'return;', exits the function cleanly, Promise resolves -> Mongoose saves user!
+    if (!this.isModified("password")) return;
+
+    // Case 2: User is registering OR changing their password
+    // Awaits bcrypt hashing, reaches end of function, Promise resolves -> Mongoose saves hashed password!
+    this.password = await bcrypt.hash(this.password, 10);
+});
 
 //creating a custom method for comparing the password that user provides with the encrypted stored password in db
 // using the .methods.ispasswordCorrect() mnetod 
@@ -64,7 +78,7 @@ userSchema.methods.isPasswordCorrect=async function (password) {
     return await bcrypt.compare(password,this.password)
 }
 
-userSchema.methods.generateAcessToken=function (){
+userSchema.methods.generateAccessToken=function (){
     return jwt.sign(
         {
             _id: this._id,
@@ -72,9 +86,9 @@ userSchema.methods.generateAcessToken=function (){
             username: this.username,
             fullname: this.fullName
         },
-        process.env.ACESS_TOKEN_SECRET,
+        process.env.ACCESS_TOKEN_SECRET,
         {
-            expiresIn:process.env.ACESS_TOKEN_EXPIRY
+            expiresIn:process.env.ACCESS_TOKEN_EXPIRY
         }
     )
 }
