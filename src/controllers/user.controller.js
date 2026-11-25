@@ -229,4 +229,115 @@ const refreshAccessToken=asyncHandler(async()=>{
     }
 })
 
-export {registerUser,loginUser,logOutUser,refreshAccessToken}
+const changeCurrentPassword=asyncHandler(async(req,res)=>{
+    const {oldPassword,newPassword}=req.body
+    // const {oldPassword,newPassword,confPassword}=req.body
+    const user=await User.findById(req.user?._id)
+    // if(!(confPassword===newPassword)){
+    //     throw new ApiError(400,"The new Password and Confirm Password should be same.")
+    // }
+    // humare pass kyuki user model aya h toh uske methods bhi aye h jaiseli "isPasswordCorrect()" which return true ya false as output
+    const isPasswordCorrect=await user.isPasswordCorrect(oldPassword)
+    if(!isPasswordCorrect){
+        throw new ApiError(400,"Invalid Old Password.")
+    }
+
+    user.password=newPassword
+    // the above line only change the value associated with user.password but to reflect changes in the database we need to save() it
+    await user.save({validateBeforeSave:false}) // this line tells we do not need to validate otherthings like username , email etc before saving 
+
+    return res.status(200).json(200,{},"Password Changed Successfully.")
+})
+
+const getCurrentUser=asyncHandler(async(req,res)=>{
+    res.status(200).json(200,req.user,"Current User Fetched Succesfully")
+})
+
+const updateAccountDetails=asyncHandler(async(req,res)=>{
+    const {fullName,email}=req.body
+    // ek suggestion ye h ki jabh bhi app files ko update karna chahte h toh app uske liye alag controller aur endpoints likhenge varna app ke network mai conjetion ki problem ati h
+    if(!fullName || !email){
+        throw new ApiError(400,"All feilds are required")
+    }
+    // for updating the user 's fullName and email we need to first find the user in database 
+    const user=User.findByIdAndUpdate(req.user?._id,
+        // here the first object contains the operator that we have to perform and the feild inside another object that we have to update for the user model in the databse.
+        {
+            $set:{
+                fullName,
+                email:email
+            }
+        },
+        {
+            new: true  // this line denotes that the new saved information will be sent back after updation
+        }
+    ).select("-password")
+
+    return res.
+    status(200).
+    json(new ApiResponse(200,user,"Account Details Updated Successfully."))
+})
+
+// files ko update karte time hume 2 middleware ka dhyan rakhna padega routing ke samay
+// 1st one is multer to accept the files and 2nd one is to verify the login of user
+const updateUserAvatar=asyncHandler(async(req,res)=>{
+    const avatarLocalPath=req.file?.path;
+    if (!avatarLocalPath) {
+        throw new ApiError(400,"Avatar file is missing.")
+    }
+    // uploading the local avatar file to cloudinary
+    const avatar=uploadOnCloudinary(avatarLocalPath)
+
+    if (!avatar.url) {
+        throw new ApiError(400,"Error while uploading on Avatar.")
+    }
+
+    const user=await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                avatar :avatar.url
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200,user,"Avatar image updated Successfully.")
+    )
+})
+
+const updateUserCoverImage=asyncHandler(async(req,res)=>{
+    const coverImageLocalPath=req.file?.path;
+    if (!coverImageLocalPath) {
+        throw new ApiError(400,"Cover Image file is missing.")
+    }
+    // uploading the local avatar file to cloudinary
+    const coverImage=uploadOnCloudinary(coverImageLocalPath)
+
+    if (!coverImage.url) {
+        throw new ApiError(400,"Error while uploading on CoverImage.")
+    }
+
+    const user=await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                coverImage :coverImage.url
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200,user,"CoverImage updated Successfully.")
+    )
+})
+
+export {registerUser,loginUser,logOutUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage}
