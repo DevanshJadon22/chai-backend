@@ -1,7 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from 'jsonwebtoken'
 
@@ -246,11 +246,11 @@ const changeCurrentPassword=asyncHandler(async(req,res)=>{
     // the above line only change the value associated with user.password but to reflect changes in the database we need to save() it
     await user.save({validateBeforeSave:false}) // this line tells we do not need to validate otherthings like username , email etc before saving 
 
-    return res.status(200).json(200,{},"Password Changed Successfully.")
+    return res.status(200).json(new ApiResponse(200,{},"Password Changed Successfully."))
 })
 
 const getCurrentUser=asyncHandler(async(req,res)=>{
-    res.status(200).json(200,req.user,"Current User Fetched Succesfully")
+    res.status(200).json(new ApiResponse(200,req.user,"Current User Fetched Succesfully"))
 })
 
 const updateAccountDetails=asyncHandler(async(req,res)=>{
@@ -285,10 +285,13 @@ const updateUserAvatar=asyncHandler(async(req,res)=>{
     if (!avatarLocalPath) {
         throw new ApiError(400,"Avatar file is missing.")
     }
-    // uploading the local avatar file to cloudinary
-    const avatar=uploadOnCloudinary(avatarLocalPath)
 
-    if (!avatar.url) {
+    const oldAvatarUrl=req.user?.avatar;
+
+    // uploading the local avatar file to cloudinary
+    const avatar=await uploadOnCloudinary(avatarLocalPath)
+
+    if (!avatar?.url) {
         throw new ApiError(400,"Error while uploading on Avatar.")
     }
 
@@ -302,6 +305,15 @@ const updateUserAvatar=asyncHandler(async(req,res)=>{
             new:true
         }
     ).select("-password")
+
+    // to do : delete old image- assignment
+    
+    // STEP D: Delete the old avatar from Cloudinary AFTER DB update succeeds
+    if (oldAvatarUrl) {
+      const deleteResponse = await deleteFromCloudinary(oldAvatarUrl, "image");
+      console.log("Old avatar delete result:", deleteResponse); // Expect: { result: 'ok' }
+    }
+
 
     return res
     .status(200)
@@ -340,4 +352,132 @@ const updateUserCoverImage=asyncHandler(async(req,res)=>{
     )
 })
 
-export {registerUser,loginUser,logOutUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage}
+const getUserChannelProfile=asyncHandler(async(req,res)=>{
+    const {username} =req.params
+
+    if(!username?.trim()){
+        throw new ApiError(400,"Username is missing.")
+    }
+
+    // we can apply aggregation pipeline after finding user from database using username 
+    // const user=User.find(username)
+    // but the better way is to add one more stage of $match in aggregation pipeline
+
+    // aapke pass jo output ata h aggregate pipeline use karne ke baad vo aray hota h aur uske andar as a object humara result hota h 
+
+    const channel=await User.aggregate(
+        [
+            // we can add as many pipelines (stages) as we want as objects inside the aggregation pipeline
+            {
+                // this $match: {username:username?.toLowerCase() } will filter out only one matching document with the given username from documents.
+                $match:{
+                    username: username?.toLowerCase()
+                }
+            },
+            {
+                $lookup:{
+                    from:"subscriptions",
+                    localField:"_id",
+                    foreignField:"channel",
+                    as: "subscribers"
+                }
+            },
+            {
+                $lookup:{
+                    from:"subscribers",
+                    localField:"_id",
+                    foreignField:"subscriber",
+                    as:"subscribedTo"
+                }
+            },
+            {
+                // here in this pipeline stage we are adding more feilds to a single object to show thm as output from a single object
+                $addFields:{
+                    subscribersCount:{
+                        $size:"$subscribers"
+                    }
+                },
+                channelsSubscribedToCount:{
+                    $size:"$subscribedTo"
+                },
+                isSubscribed:{
+                    $cond:{
+                        if:{$in:[req.user?._id,"$subscribers.subscriber"]},
+                        then:true,
+                        else:false
+                    }
+                }
+            },
+            {
+                // here we will "$project" that will help us to project selected items to the user
+                $project:{
+                    fullName:1,
+                    username:1,
+                    subscribersCount:1,
+                    channelsSubscribedToCount:1,
+                    isSubscribed:1,
+                    avatar:1,
+                    coverImage:1,
+                    email:1
+                }
+            }
+        ])
+    
+    // the aggregate function returns array as an output 
+    if(!channel.length){
+        throw new ApiError(404,"Channel does not exists.")
+    }
+    console.log(channel);
+    return res.status(200).json(new ApiResponse(200,channel[0],"User Channel Fetched Succesfully."))
+})
+
+const getWatchHistory=asyncHandler(async(req,res)=>{
+    const user=await User.aggregate([
+        {
+            $match:{
+                // when we write "req.user._id" then this gives us the string as written like "ObjectId(kdfi253)" so to get the exact Id that is "kdfi253" we need the help of mongoose
+                // when we write User.find(req.user._id) here the mongoose handle the above problem on its own but here in the $match:{} we have to use the beow code
+                _id: new mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {
+            $lookup:{
+                from:"videos",
+                localField:"watchHistory",
+                foreignField:"_id",
+                as:"watchHistory",
+                // here we will have to apply a subpipeline to get the videos associated with the documents that we fetched based on the _id through above stages
+                pipeline:[
+                    {
+                        $lookup:{
+                            from:"users",
+                            localField:"owner",
+                            foreignField:"_id",
+                            as:"owner",
+                            pipeline:[
+                                {
+                                    $project:{
+                                        fullName:1,
+                                        username:1,
+                                        avatar:1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields:{
+                            owner:{
+                                $first:"$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res.status(200).json(new ApiResponse(200,user[0].watchHistory,"Watch History fetched Succesfully."))
+})
+
+export {registerUser,loginUser,logOutUser,refreshAccessToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile,getWatchHistory}

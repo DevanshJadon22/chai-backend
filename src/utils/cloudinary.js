@@ -30,4 +30,45 @@ const uploadOnCloudinary=async (localFilePath)=>{
     }
 }
 
-export {uploadOnCloudinary}
+// 2. NEW HELPER: Extracts Cloudinary `public_id` from a full Cloudinary URL
+const extractPublicIdFromUrl = (cloudinaryUrl) => {
+  if (!cloudinaryUrl) return null;
+
+  try {
+    // Split on "/upload/" to discard domain, cloud name, and resource type
+    const parts = cloudinaryUrl.split("/upload/");
+    if (parts.length < 2) return null;
+
+    // Strip optional version prefix (e.g., "v1712345678/")
+    const pathWithoutVersion = parts[1].replace(/^v\d+\//, "");
+
+    // Strip the final file extension (e.g., ".jpg", ".png", ".webp")
+    const publicId = pathWithoutVersion.replace(/\.[^/.]+$/, "");
+
+    return publicId;
+  } catch (error) {
+    return null;
+  }
+};
+
+// 3. NEW DELETE UTILITY: Deletes a single asset from Cloudinary & clears CDN cache
+const deleteFromCloudinary = async (cloudinaryUrl, resourceType = "image") => {
+  try {
+    if (!cloudinaryUrl) return null;
+
+    const publicId = extractPublicIdFromUrl(cloudinaryUrl);
+    if (!publicId) return null;
+
+    const response = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType, // Must be "image", "video", or "raw" (NEVER "auto")
+      invalidate: true,            // Clears cached copies from CDN edge servers
+    });
+
+    return response; // Returns { result: "ok" } when deleted successfully
+  } catch (error) {
+    console.error("Cloudinary delete failed:", error.message);
+    return null;
+  }
+};
+
+export {uploadOnCloudinary ,deleteFromCloudinary}
